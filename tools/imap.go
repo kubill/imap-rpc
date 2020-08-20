@@ -201,6 +201,135 @@ func (i *Imap) GetFolderMail(param map[string]string, reply *[]*MailItem) error 
 	return nil
 }
 
+//获取邮件夹邮件
+func (i *Imap) GetRecent(param map[string]string, reply *[]*MailItem) error {
+	var c *client.Client
+	server := param["server"]
+	email := param["email"]
+	password := param["password"]
+	folder := param["folder"]
+
+	c = connect(server, email, password)
+	if c == nil {
+		return nil
+	}
+
+	mbox, err := c.Select(folder, true)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if mbox.Recent == 0 {
+		return nil
+	}
+
+	// Set search criteria
+	criteria := imap.NewSearchCriteria()
+	criteria.WithoutFlags = []string{imap.SeenFlag}
+	ids, err := c.Search(criteria)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if len(ids) > 0 {
+		seqset := new(imap.SeqSet)
+		seqset.AddNum(ids...)
+
+		messages := make(chan *imap.Message, 10)
+		done := make(chan error, 1)
+		items := make([]imap.FetchItem, 0)
+		items = append(items, imap.FetchItem(imap.FetchFlags))
+		items = append(items, imap.FetchItem(imap.FetchUid))
+		items = append(items, imap.FetchItem(imap.FetchEnvelope))
+		go func() {
+			done <- c.Fetch(seqset, items, messages)
+		}()
+		dec := GetDecoder()
+		for msg := range messages {
+			log.Println(msg.Uid)
+			subject, err := dec.Decode(msg.Envelope.Subject)
+			if err != nil {
+				subject, _ = dec.DecodeHeader(msg.Envelope.Subject)
+			}
+			var mailitem = new(MailItem)
+			mailitem.Subject = subject
+			mailitem.ID = msg.SeqNum
+			mailitem.UID = msg.Uid
+			mailitem.Fid = folder
+			mailitem.Date = msg.Envelope.Date
+			mailitem.Flags = msg.Flags
+			for _, from := range msg.Envelope.From {
+				mailAddr := new(MailAddress)
+				mailAddr.Personal = from.PersonalName
+				mailAddr.Address = from.MailboxName + "@" + from.HostName
+				mailitem.From = append(mailitem.From, mailAddr)
+			}
+			for _, to := range msg.Envelope.To {
+				mailAddr := new(MailAddress)
+				mailAddr.Personal = to.PersonalName
+				mailAddr.Address = to.MailboxName + "@" + to.HostName
+				mailitem.To = append(mailitem.To, mailAddr)
+			}
+
+			*reply = append(*reply, mailitem)
+		}
+		if err := <-done; err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// if mbox.Recent == 0 {
+	// 	return nil
+	// }
+
+	// seqset := new(imap.SeqSet)
+	// seqset.AddRange(1, mbox.Recent)
+
+	// messages := make(chan *imap.Message, 0)
+	// done := make(chan error, 1)
+	// items := make([]imap.FetchItem, 0)
+	// items = append(items, imap.FetchItem(imap.FetchFlags))
+	// items = append(items, imap.FetchItem(imap.FetchUid))
+	// items = append(items, imap.FetchItem(imap.FetchEnvelope))
+	// go func() {
+	// 	done <- c.Fetch(seqset, items, messages)
+	// }()
+
+	// dec := GetDecoder()
+
+	// for msg := range messages {
+	// 	log.Println(msg.Uid)
+	// 	subject, err := dec.Decode(msg.Envelope.Subject)
+	// 	if err != nil {
+	// 		subject, _ = dec.DecodeHeader(msg.Envelope.Subject)
+	// 	}
+	// 	var mailitem = new(MailItem)
+	// 	mailitem.Subject = subject
+	// 	mailitem.ID = msg.SeqNum
+	// 	mailitem.UID = msg.Uid
+	// 	mailitem.Fid = folder
+	// 	mailitem.Date = msg.Envelope.Date
+	// 	mailitem.Flags = msg.Flags
+	// 	for _, from := range msg.Envelope.From {
+	// 		mailAddr := new(MailAddress)
+	// 		mailAddr.Personal = from.PersonalName
+	// 		mailAddr.Address = from.MailboxName + "@" + from.HostName
+	// 		mailitem.From = append(mailitem.From, mailAddr)
+	// 	}
+	// 	for _, to := range msg.Envelope.To {
+	// 		mailAddr := new(MailAddress)
+	// 		mailAddr.Personal = to.PersonalName
+	// 		mailAddr.Address = to.MailboxName + "@" + to.HostName
+	// 		mailitem.To = append(mailitem.To, mailAddr)
+	// 	}
+
+	// 	*reply = append(*reply, mailitem)
+	// }
+	// defer c.Logout()
+	return nil
+}
+
 // func (i *Imap) GetMessage(param map[string]string, reply *MailItem) error {
 // 	var c *client.Client
 // 	//defer c.Logout()
