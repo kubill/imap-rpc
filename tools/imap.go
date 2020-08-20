@@ -142,7 +142,7 @@ func (i *Imap) GetFolderMail(param map[string]string, reply *[]*MailItem) error 
 	// currentPage, _ := strconv.ParseUint(param["currentPage"], 10, 32)
 	// pagesize, _ := strconv.ParseUint(param["pagesize"], 10, 32)
 
-	defer c.Logout()
+	// defer c.Logout()
 	c = connect(server, email, password)
 	if c == nil {
 		return nil
