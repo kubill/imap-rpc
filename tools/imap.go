@@ -442,7 +442,9 @@ func (i *Imap) GetMessage(param map[string]string, reply *MailItem) error {
 			//解析<img>标签
 			v, _ := s.Attr("src")
 			cid := strings.Split(v, ":")
-			s.SetAttr("src", imagesmap[cid[len(cid)-1]]) //修改标签的内容
+			if cid[0] == "cid" {
+				s.SetAttr("src", imagesmap[cid[len(cid)-1]]) //修改标签的内容
+			}
 		})
 		html, _ := doc.Html()
 		ioutil.WriteFile(mailpath+"/"+param["uid"]+".html", []byte(html), 0777)
