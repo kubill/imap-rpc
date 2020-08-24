@@ -1,32 +1,33 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"main/tools"
+	"net"
+	"net/rpc"
+
+	"github.com/spiral/goridge"
 )
 
 func main() {
-	var a uint32 = 1
-	str := fmt.Sprint(a)
-	log.Println(str)
-	// ln, err := net.Listen("tcp", ":6002")
-	// if err != nil {
-	// 	panic(err)
-	// }
+	ln, err := net.Listen("tcp", ":6002")
+	if err != nil {
+		panic(err)
+	}
 
-	// err = rpc.Register(new(tools.Imap))
-	// if err != nil {
-	// 	panic(err)
-	// }
+	err = rpc.Register(new(tools.Imap))
+	if err != nil {
+		panic(err)
+	}
 
-	// log.Printf("started")
+	log.Printf("started")
 
-	// for {
-	// 	conn, err := ln.Accept()
-	// 	if err != nil {
-	// 		continue
-	// 	}
-	// 	log.Printf("new connection %+v", conn.RemoteAddr().String())
-	// 	go rpc.ServeCodec(goridge.NewCodec(conn))
-	// }
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			continue
+		}
+		log.Printf("new connection %+v", conn.RemoteAddr().String())
+		go rpc.ServeCodec(goridge.NewCodec(conn))
+	}
 }
