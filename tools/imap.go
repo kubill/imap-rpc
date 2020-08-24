@@ -138,14 +138,12 @@ func GetFolders(server string, email string, password string, folder string) map
 }
 
 //GetFolderMail 获取邮件夹邮件
-func (i *Imap) GetFolderMail(param map[string]string, reply *[]*MailItem) error {
+func (i *Imap) GetFolderMail(param GetMessagesType, reply *[]MailItem) error {
 	var c *client.Client
-	server := param["server"]
-	email := param["email"]
-	password := param["password"]
-	folder := param["folder"]
-	// currentPage, _ := strconv.ParseUint(param["currentPage"], 10, 32)
-	// pagesize, _ := strconv.ParseUint(param["pagesize"], 10, 32)
+	server := param.Server.Server
+	email := param.Server.Email
+	password := param.Server.Password
+	folder := param.Folder
 
 	// defer c.Logout()
 	c = connect(server, email, password)
@@ -154,11 +152,6 @@ func (i *Imap) GetFolderMail(param map[string]string, reply *[]*MailItem) error 
 	}
 
 	mbox, _ := c.Select(folder, true)
-	// to := mbox.Messages - uint32((currentPage-1)*pagesize)
-	// from := to - uint32(pagesize)
-	// if to <= uint32(pagesize) {
-	// 	from = 1
-	// }
 
 	seqset := new(imap.SeqSet)
 	seqset.AddRange(1, mbox.Messages)
@@ -176,7 +169,6 @@ func (i *Imap) GetFolderMail(param map[string]string, reply *[]*MailItem) error 
 	dec := GetDecoder()
 
 	for msg := range messages {
-		log.Println(msg.Uid)
 		subject, err := dec.Decode(msg.Envelope.Subject)
 		if err != nil {
 			subject, _ = dec.DecodeHeader(msg.Envelope.Subject)
@@ -201,18 +193,59 @@ func (i *Imap) GetFolderMail(param map[string]string, reply *[]*MailItem) error 
 			mailitem.To = append(mailitem.To, mailAddr)
 		}
 
-		*reply = append(*reply, mailitem)
+		*reply = append(*reply, *mailitem)
+	}
+	return nil
+}
+
+//GetMessagesFlag 获取多个邮件的flag。
+func (i *Imap) GetMessagesFlag(param GetMessagesType, reply *[]MailFlagtype) error {
+	var c *client.Client
+	server := param.Server.Server
+	email := param.Server.Email
+	password := param.Server.Password
+
+	// defer c.Logout()
+	c = connect(server, email, password)
+	if c == nil {
+		return nil
+	}
+
+	mbox, _ := c.Select(param.Folder, true)
+	start := mbox.Messages - uint32((param.Page-1)*param.Limit)
+	end := start - uint32(param.Limit)
+	if start <= uint32(param.Limit) {
+		end = 1
+	}
+
+	seqset := new(imap.SeqSet)
+	seqset.AddRange(start, end)
+
+	messages := make(chan *imap.Message, 1)
+	done := make(chan error, 1)
+	items := make([]imap.FetchItem, 0)
+	items = append(items, imap.FetchItem(imap.FetchFlags))
+	items = append(items, imap.FetchItem(imap.FetchUid))
+	go func() {
+		done <- c.Fetch(seqset, items, messages)
+	}()
+
+	for msg := range messages {
+		flagitem := new(MailFlagtype)
+		flagitem.UID = msg.Uid
+		flagitem.Flags = msg.Flags
+		*reply = append(*reply, *flagitem)
 	}
 	return nil
 }
 
 //GetRecent 获取最新的邮件
-func (i *Imap) GetRecent(param map[string]string, reply *[]*MailItem) error {
+func (i *Imap) GetRecent(param GetMessagesType, reply *[]MailItem) error {
 	var c *client.Client
-	server := param["server"]
-	email := param["email"]
-	password := param["password"]
-	folder := param["folder"]
+	server := param.Server.Server
+	email := param.Server.Email
+	password := param.Server.Password
+	folder := param.Folder
 
 	c = connect(server, email, password)
 	if c == nil {
@@ -252,7 +285,6 @@ func (i *Imap) GetRecent(param map[string]string, reply *[]*MailItem) error {
 		}()
 		dec := GetDecoder()
 		for msg := range messages {
-			log.Println(msg.Uid)
 			subject, err := dec.Decode(msg.Envelope.Subject)
 			if err != nil {
 				subject, _ = dec.DecodeHeader(msg.Envelope.Subject)
@@ -277,7 +309,7 @@ func (i *Imap) GetRecent(param map[string]string, reply *[]*MailItem) error {
 				mailitem.To = append(mailitem.To, mailAddr)
 			}
 
-			*reply = append(*reply, mailitem)
+			*reply = append(*reply, *mailitem)
 		}
 		if err := <-done; err != nil {
 			log.Fatal(err)
@@ -286,15 +318,15 @@ func (i *Imap) GetRecent(param map[string]string, reply *[]*MailItem) error {
 	return nil
 }
 
-//GetMessage 根据邮件 UID 获取邮件相关信息 //TODO 所有传参传 struct ，需定义相关的 param struct
-func (i *Imap) GetMessage(param map[string]string, reply *MailItem) error {
+//GetMessage 获取邮件详情
+func (i *Imap) GetMessage(param GetMessageType, reply *MailItem) error {
 	var c *client.Client
-	server := param["server"] //TODO 这里弄成 struct
-	email := param["email"]
-	password := param["password"]
-	folder := param["folder"]
-	mailpath := param["mailpath"]
-	uid, _ := strconv.ParseUint(param["uid"], 10, 32)
+	server := param.Server.Server
+	email := param.Server.Email
+	password := param.Server.Password
+	folder := param.Folder
+	mailpath := param.Mailpath
+	uid := param.UID
 
 	imagesmap := make(map[string]string)
 
@@ -426,8 +458,8 @@ func (i *Imap) GetMessage(param map[string]string, reply *MailItem) error {
 			// 附件处理
 			filename, _ := h.Filename()
 			b, _ := ioutil.ReadAll(p.Body)
-			os.MkdirAll(mailpath+"/"+param["uid"], os.ModePerm)
-			ioutil.WriteFile(mailpath+"/"+param["uid"]+"/"+filename, b, 0777) //附件保存目录，保存在已邮件的 UID 为名字的文件夹里
+			os.MkdirAll(mailpath+"/"+fmt.Sprint(uid), os.ModePerm)
+			ioutil.WriteFile(mailpath+"/"+fmt.Sprint(uid)+"/"+filename, b, 0777) //附件保存目录，保存在已邮件的 UID 为名字的文件夹里
 			mailitem.Attachments++
 		}
 	}
@@ -447,14 +479,15 @@ func (i *Imap) GetMessage(param map[string]string, reply *MailItem) error {
 			}
 		})
 		html, _ := doc.Html()
-		ioutil.WriteFile(mailpath+"/"+param["uid"]+".html", []byte(html), 0777)
+		ioutil.WriteFile(mailpath+"/"+fmt.Sprint(uid)+".html", []byte(html), 0777)
 		mailitem.HTMLBody = html
 	}
-	// TEXT 内容返回给 PHP
-	if bodyMap["text/plain"] != "" {
-		mailitem.Body = bodyMap["text/plain"]
-	}
 
+	// TEXT 内容返回给 PHP
+	if bodyMap["text/plain"] == "" {
+		bodyMap["text/plain"] = bodyMap["text/html"]
+	}
+	mailitem.Body = bodyMap["text/plain"]
 	*reply = *mailitem
 	return nil
 }
