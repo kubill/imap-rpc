@@ -306,12 +306,14 @@ func (i *Imap) GetMessage(param map[string]string, reply *MailItem) error {
 	// 选择 文件夹
 	mbox, err := c.Select(folder, false)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return nil
 	}
 
 	// 获取邮件
 	if mbox.Messages == 0 {
-		log.Fatal("No message in mailbox")
+		log.Println("No message in mailbox")
+		return nil
 	}
 	seqSet := new(imap.SeqSet)
 	seqSet.AddNum(uint32(uid))
@@ -430,20 +432,21 @@ func (i *Imap) GetMessage(param map[string]string, reply *MailItem) error {
 		}
 	}
 	// 写入 html 邮件内容到磁盘， html 中 <img src="cid:xxx" /> 处理成 base64
-	if bodyMap["text/html"] != "" {
-		os.MkdirAll(mailpath, os.ModePerm) //创建文件夹
-		doc, err := goquery.NewDocumentFromReader(strings.NewReader(bodyMap["text/html"]))
-		if err == nil {
-			doc.Find("img").Each(func(i int, s *goquery.Selection) {
-				//解析<img>标签
-				v, _ := s.Attr("src")
-				cid := strings.Split(v, ":")
-				s.SetAttr("src", imagesmap[cid[len(cid)-1]]) //修改标签的内容
-			})
-			html, _ := doc.Html()
-			ioutil.WriteFile(mailpath+"/"+param["uid"]+".html", []byte(html), 0777)
-			mailitem.HTMLBody = html
-		}
+	if bodyMap["text/html"] == "" {
+		bodyMap["text/html"] = bodyMap["text/plain"]
+	}
+	os.MkdirAll(mailpath, os.ModePerm) //创建文件夹
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(bodyMap["text/html"]))
+	if err == nil {
+		doc.Find("img").Each(func(i int, s *goquery.Selection) {
+			//解析<img>标签
+			v, _ := s.Attr("src")
+			cid := strings.Split(v, ":")
+			s.SetAttr("src", imagesmap[cid[len(cid)-1]]) //修改标签的内容
+		})
+		html, _ := doc.Html()
+		ioutil.WriteFile(mailpath+"/"+param["uid"]+".html", []byte(html), 0777)
+		mailitem.HTMLBody = html
 	}
 	// TEXT 内容返回给 PHP
 	if bodyMap["text/plain"] != "" {
