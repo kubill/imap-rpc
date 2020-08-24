@@ -2,17 +2,22 @@ package tools
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"mime"
+	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/axgle/mahonia"
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
+	"github.com/emersion/go-message/mail"
 	"golang.org/x/net/html/charset"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/unicode"
@@ -72,7 +77,7 @@ func connect(server string, email string, password string) *client.Client {
 	return c
 }
 
-//获取邮件总数
+//GetMailNum 获取邮件总数
 func GetMailNum(server string, email string, password string) map[string]int {
 	var c *client.Client
 	//defer c.Logout()
@@ -100,7 +105,7 @@ func GetMailNum(server string, email string, password string) map[string]int {
 	return folders
 }
 
-//获取邮件夹
+//GetFolders 获取邮件夹
 func GetFolders(server string, email string, password string, folder string) map[string]int {
 	var c *client.Client
 	//defer c.Logout()
@@ -132,7 +137,7 @@ func GetFolders(server string, email string, password string, folder string) map
 	return folders
 }
 
-//获取邮件夹邮件
+//GetFolderMail 获取邮件夹邮件
 func (i *Imap) GetFolderMail(param map[string]string, reply *[]*MailItem) error {
 	var c *client.Client
 	server := param["server"]
@@ -184,14 +189,14 @@ func (i *Imap) GetFolderMail(param map[string]string, reply *[]*MailItem) error 
 		mailitem.Date = msg.Envelope.Date
 		mailitem.Flags = msg.Flags
 		for _, from := range msg.Envelope.From {
-			mailAddr := new(MailAddress)
-			mailAddr.Personal = from.PersonalName
+			mailAddr := new(mail.Address)
+			mailAddr.Name = from.PersonalName
 			mailAddr.Address = from.MailboxName + "@" + from.HostName
 			mailitem.From = append(mailitem.From, mailAddr)
 		}
 		for _, to := range msg.Envelope.To {
-			mailAddr := new(MailAddress)
-			mailAddr.Personal = to.PersonalName
+			mailAddr := new(mail.Address)
+			mailAddr.Name = to.PersonalName
 			mailAddr.Address = to.MailboxName + "@" + to.HostName
 			mailitem.To = append(mailitem.To, mailAddr)
 		}
@@ -201,7 +206,7 @@ func (i *Imap) GetFolderMail(param map[string]string, reply *[]*MailItem) error 
 	return nil
 }
 
-//获取邮件夹邮件
+//GetRecent 获取最新的邮件
 func (i *Imap) GetRecent(param map[string]string, reply *[]*MailItem) error {
 	var c *client.Client
 	server := param["server"]
@@ -260,14 +265,14 @@ func (i *Imap) GetRecent(param map[string]string, reply *[]*MailItem) error {
 			mailitem.Date = msg.Envelope.Date
 			mailitem.Flags = msg.Flags
 			for _, from := range msg.Envelope.From {
-				mailAddr := new(MailAddress)
-				mailAddr.Personal = from.PersonalName
+				mailAddr := new(mail.Address)
+				mailAddr.Name = from.PersonalName
 				mailAddr.Address = from.MailboxName + "@" + from.HostName
 				mailitem.From = append(mailitem.From, mailAddr)
 			}
 			for _, to := range msg.Envelope.To {
-				mailAddr := new(MailAddress)
-				mailAddr.Personal = to.PersonalName
+				mailAddr := new(mail.Address)
+				mailAddr.Name = to.PersonalName
 				mailAddr.Address = to.MailboxName + "@" + to.HostName
 				mailitem.To = append(mailitem.To, mailAddr)
 			}
@@ -278,183 +283,176 @@ func (i *Imap) GetRecent(param map[string]string, reply *[]*MailItem) error {
 			log.Fatal(err)
 		}
 	}
-
-	// if mbox.Recent == 0 {
-	// 	return nil
-	// }
-
-	// seqset := new(imap.SeqSet)
-	// seqset.AddRange(1, mbox.Recent)
-
-	// messages := make(chan *imap.Message, 0)
-	// done := make(chan error, 1)
-	// items := make([]imap.FetchItem, 0)
-	// items = append(items, imap.FetchItem(imap.FetchFlags))
-	// items = append(items, imap.FetchItem(imap.FetchUid))
-	// items = append(items, imap.FetchItem(imap.FetchEnvelope))
-	// go func() {
-	// 	done <- c.Fetch(seqset, items, messages)
-	// }()
-
-	// dec := GetDecoder()
-
-	// for msg := range messages {
-	// 	log.Println(msg.Uid)
-	// 	subject, err := dec.Decode(msg.Envelope.Subject)
-	// 	if err != nil {
-	// 		subject, _ = dec.DecodeHeader(msg.Envelope.Subject)
-	// 	}
-	// 	var mailitem = new(MailItem)
-	// 	mailitem.Subject = subject
-	// 	mailitem.ID = msg.SeqNum
-	// 	mailitem.UID = msg.Uid
-	// 	mailitem.Fid = folder
-	// 	mailitem.Date = msg.Envelope.Date
-	// 	mailitem.Flags = msg.Flags
-	// 	for _, from := range msg.Envelope.From {
-	// 		mailAddr := new(MailAddress)
-	// 		mailAddr.Personal = from.PersonalName
-	// 		mailAddr.Address = from.MailboxName + "@" + from.HostName
-	// 		mailitem.From = append(mailitem.From, mailAddr)
-	// 	}
-	// 	for _, to := range msg.Envelope.To {
-	// 		mailAddr := new(MailAddress)
-	// 		mailAddr.Personal = to.PersonalName
-	// 		mailAddr.Address = to.MailboxName + "@" + to.HostName
-	// 		mailitem.To = append(mailitem.To, mailAddr)
-	// 	}
-
-	// 	*reply = append(*reply, mailitem)
-	// }
-	// defer c.Logout()
 	return nil
 }
 
-// func (i *Imap) GetMessage(param map[string]string, reply *MailItem) error {
-// 	var c *client.Client
-// 	//defer c.Logout()
-// 	c = connect(param["server"], param["email"], param["password"])
-// 	if c == nil {
-// 		//return nil
-// 	}
-// 	// Select INBOX
-// 	mbox, err := c.Select("INBOX", false)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
+//GetMessage 根据邮件 UID 获取邮件相关信息 //TODO 所有传参传 struct ，需定义相关的 param struct
+func (i *Imap) GetMessage(param map[string]string, reply *MailItem) error {
+	var c *client.Client
+	server := param["server"] //TODO 这里弄成 struct
+	email := param["email"]
+	password := param["password"]
+	folder := param["folder"]
+	mailpath := param["mailpath"]
+	uid, _ := strconv.ParseUint(param["uid"], 10, 32)
 
-// 	// Get the last message
-// 	if mbox.Messages == 0 {
-// 		log.Fatal("No message in mailbox")
-// 	}
-// 	log.Println("邮件数：", mbox.Messages)
-// 	seqSet := new(imap.SeqSet)
-// 	id, _ := strconv.ParseUint(param["id"], 10, 32)
-// 	seqSet.AddNum(uint32(id))
+	imagesmap := make(map[string]string)
 
-// 	// Get the whole message body
-// 	section := &imap.BodySectionName{}
-// 	items := []imap.FetchItem{section.FetchItem()}
+	//defer c.Logout()
+	c = connect(server, email, password)
+	if c == nil {
+		return nil
+	}
+	// 选择 文件夹
+	mbox, err := c.Select(folder, false)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-// 	messages := make(chan *imap.Message, 1)
-// 	go func() {
-// 		if err := c.Fetch(seqSet, items, messages); err != nil {
-// 			log.Fatal(err)
-// 		}
-// 	}()
+	// 获取邮件
+	if mbox.Messages == 0 {
+		log.Fatal("No message in mailbox")
+	}
+	seqSet := new(imap.SeqSet)
+	seqSet.AddNum(uint32(uid))
 
-// 	msg := <-messages
-// 	if msg == nil {
-// 		log.Fatal("Server didn't returned message")
-// 	}
+	// 获取邮件 body
+	section := &imap.BodySectionName{}
+	items := []imap.FetchItem{section.FetchItem()}
 
-// 	r := msg.GetBody(section)
+	messages := make(chan *imap.Message, 1)
+	go func() {
+		if err := c.UidFetch(seqSet, items, messages); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
-// 	if r == nil {
-// 		log.Fatal("Server didn't returned message body")
-// 	}
-// 	var mailitem = new(MailItem)
+	msg := <-messages
+	if msg == nil {
+		log.Println("Server didn't returned message")
+		return nil
+	}
 
-// 	// Create a new mail reader
-// 	mr, _ := mail.CreateReader(r)
+	r := msg.GetBody(section)
 
-// 	// Print some info about the message
-// 	header := mr.Header
-// 	date, _ := header.Date()
+	if r == nil {
+		log.Println("Server didn't returned message body")
+		return nil
+	}
+	mailitem := new(MailItem)
+	mailitem.Attachments = 0
 
-// 	mailitem.Date = date.String()
+	mr, _ := mail.CreateReader(r)
+	header := mr.Header
 
-// 	var f string
-// 	dec := GetDecoder()
+	date, _ := header.Date()
+	mailitem.Date = date
 
-// 	if from, err := header.AddressList("From"); err == nil {
-// 		for _, address := range from {
-// 			fromStr := address.String()
-// 			temp, _ := dec.DecodeHeader(fromStr)
-// 			f += " " + temp
-// 		}
-// 	}
-// 	mailitem.From = f
-// 	log.Println("From:", mailitem.From)
+	dec := GetDecoder()
 
-// 	var t string
-// 	if to, err := header.AddressList("To"); err == nil {
-// 		log.Println("To:", to)
-// 		for _, address := range to {
-// 			toStr := address.String()
-// 			temp, _ := dec.DecodeHeader(toStr)
-// 			t += " " + temp
-// 		}
-// 	}
-// 	mailitem.To = t
+	if from, err := header.AddressList("From"); err == nil {
+		for _, address := range from {
+			mailAddr := new(mail.Address)
+			mailAddr.Address = address.Address
+			name, _ := dec.Decode(address.Name)
+			mailAddr.Name = name
+			mailitem.From = append(mailitem.From, mailAddr)
+		}
+	}
 
-// 	subject, _ := header.Subject()
-// 	s, err := dec.Decode(subject)
-// 	if err != nil {
-// 		s, _ = dec.DecodeHeader(subject)
-// 	}
-// 	log.Println("Subject:", s)
-// 	mailitem.Subject = s
-// 	// Process each message's part
-// 	var bodyMap = make(map[string]string)
-// 	bodyMap["text/plain"] = ""
-// 	bodyMap["text/html"] = ""
+	if to, err := header.AddressList("To"); err == nil {
+		for _, address := range to {
+			mailAddr := new(mail.Address)
+			mailAddr.Address = address.Address
+			name, _ := dec.Decode(address.Name)
+			mailAddr.Name = name
+			mailitem.To = append(mailitem.To, mailAddr)
+		}
+	}
 
-// 	for {
-// 		p, err := mr.NextPart()
-// 		if err == io.EOF {
-// 			break
-// 		} else if err != nil {
-// 			//log.Fatal(err)
-// 		}
-// 		switch h := p.Header.(type) {
-// 		case *mail.InlineHeader:
-// 			// This is the message's text (can be plain-text or HTML)
+	subject, _ := header.Subject()
+	s, err := dec.Decode(subject)
+	if err != nil {
+		s, _ = dec.DecodeHeader(subject)
+	}
+	mailitem.Subject = s
 
-// 			b, _ := ioutil.ReadAll(p.Body)
-// 			ct := p.Header.Get("Content-Type")
-// 			if strings.Contains(ct, "text/plain") {
-// 				bodyMap["text/plain"] += Encoding(string(b), ct)
-// 			} else {
-// 				bodyMap["text/html"] += Encoding(string(b), ct)
-// 			}
-// 			//body,_:=dec.Decode(string(b))
-// 		case *mail.AttachmentHeader:
-// 			// This is an attachment
-// 			filename, _ := h.Filename()
-// 			log.Println("Got attachment: ", filename)
-// 		}
+	var bodyMap = make(map[string]string)
+	bodyMap["text/plain"] = ""
+	bodyMap["text/html"] = ""
 
-// 	}
-// 	if bodyMap["text/html"] != "" {
-// 		mailitem.Body = bodyMap["text/html"]
-// 	} else {
-// 		mailitem.Body = bodyMap["text/plain"]
-// 	}
-// 	// *reply = *mailitem
-// 	//log.Println(mailitem.Body)
-// 	return nil
-// }
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			log.Println(err) //TODO 写日志
+		}
+		disp := p.Header.Get("Content-Disposition")
+		switch h := p.Header.(type) {
+		case *mail.InlineHeader:
+			b, _ := ioutil.ReadAll(p.Body)
+			//判断是 inline 附件还是邮件正文
+			if disp != "" {
+				// 内联附件 主要是内容中的图片 //TODO 替换内容中的图片
+				contentID := h.Get("Content-ID")
+				_, pr, _ := h.ContentType()
+				// os.MkdirAll(mailpath+"/"+param["uid"], os.ModePerm) // 创建文件夹
+				// if err != nil {
+				// 	fmt.Println(err)
+				// }
+				// err = ioutil.WriteFile(pr["name"], b, 0777)
+				// 获取图片 cid
+				reg := regexp.MustCompile(`[a-zA-Z0-9]{2,}`)
+				contentID = reg.FindString(contentID)
+				// 获取图片后缀
+				s := strings.Split(pr["name"], ".")
+				ext := s[len(s)-1]
+				base64image := "data:image/" + ext + ";base64," + base64.StdEncoding.EncodeToString(b)
+				imagesmap[contentID] = base64image
+			} else {
+				//正文
+				ct := p.Header.Get("Content-Type")
+				if strings.Contains(ct, "text/plain") {
+					b, _ = parseText(b) // 只获取最新回复的内容，以前的邮件对话之类的冗余内容就不要了。
+					bodyMap["text/plain"] += string(b)
+				} else if strings.Contains(ct, "text/html") {
+					bodyMap["text/html"] += string(b)
+				}
+			}
+		case *mail.AttachmentHeader:
+			// 附件处理
+			filename, _ := h.Filename()
+			b, _ := ioutil.ReadAll(p.Body)
+			os.MkdirAll(mailpath+"/"+param["uid"], os.ModePerm)
+			ioutil.WriteFile(mailpath+"/"+param["uid"]+"/"+filename, b, 0777) //附件保存目录，保存在已邮件的 UID 为名字的文件夹里
+			mailitem.Attachments++
+		}
+	}
+	// 写入 html 邮件内容到磁盘， html 中 <img src="cid:xxx" /> 处理成 base64
+	if bodyMap["text/html"] != "" {
+		os.MkdirAll(mailpath, os.ModePerm) //创建文件夹
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(bodyMap["text/html"]))
+		if err == nil {
+			doc.Find("img").Each(func(i int, s *goquery.Selection) {
+				//解析<img>标签
+				v, _ := s.Attr("src")
+				cid := strings.Split(v, ":")
+				s.SetAttr("src", imagesmap[cid[len(cid)-1]]) //修改标签的内容
+			})
+			html, _ := doc.Html()
+			ioutil.WriteFile(mailpath+"/"+param["uid"]+".html", []byte(html), 0777)
+			mailitem.HTMLBody = html
+		}
+	}
+	// TEXT 内容返回给 PHP
+	if bodyMap["text/plain"] != "" {
+		mailitem.Body = bodyMap["text/plain"]
+	}
+
+	*reply = *mailitem
+	return nil
+}
 
 func GetDecoder() *mime.WordDecoder {
 	dec := new(mime.WordDecoder)

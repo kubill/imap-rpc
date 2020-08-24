@@ -6,7 +6,7 @@ import (
 	"net"
 	"net/rpc"
 
-	"github.com/spiral/goridge/v2"
+	"github.com/spiral/goridge"
 )
 
 func main() {
@@ -27,7 +27,6 @@ func main() {
 		if err != nil {
 			continue
 		}
-
 		log.Printf("new connection %+v", conn.RemoteAddr().String())
 		go rpc.ServeCodec(goridge.NewCodec(conn))
 	}
