@@ -449,9 +449,9 @@ func (i *Imap) GetMessage(param GetMessageType, reply *MailItem) error {
 				ct := p.Header.Get("Content-Type")
 				if strings.Contains(ct, "text/plain") {
 					b, _ = parseText(b) // 只获取最新回复的内容，以前的邮件对话之类的冗余内容就不要了。
-					bodyMap["text/plain"] += string(b)
+					bodyMap["text/plain"] += Encoding(string(b), ct)
 				} else if strings.Contains(ct, "text/html") {
-					bodyMap["text/html"] += string(b)
+					bodyMap["text/html"] += Encoding(string(b), ct)
 				}
 			}
 		case *mail.AttachmentHeader:
