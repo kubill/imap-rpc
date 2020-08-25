@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/axgle/mahonia"
@@ -320,6 +321,7 @@ func (i *Imap) GetRecent(param GetMessagesType, reply *[]MailItem) error {
 
 //GetMessage 获取邮件详情
 func (i *Imap) GetMessage(param GetMessageType, reply *MailItem) error {
+	t1 := time.Now()
 	var c *client.Client
 	server := param.Server.Server
 	email := param.Server.Email
@@ -330,7 +332,7 @@ func (i *Imap) GetMessage(param GetMessageType, reply *MailItem) error {
 
 	imagesmap := make(map[string]string)
 
-	//defer c.Logout()
+	// defer c.Logout()
 	c = connect(server, email, password)
 	if c == nil {
 		return nil
@@ -341,14 +343,15 @@ func (i *Imap) GetMessage(param GetMessageType, reply *MailItem) error {
 		log.Println(err)
 		return nil
 	}
-
+	t2 := time.Now()
+	fmt.Println("打开连接用了：", t2.Sub(t1))
 	// 获取邮件
 	if mbox.Messages == 0 {
 		log.Println("No message in mailbox")
 		return nil
 	}
 	seqSet := new(imap.SeqSet)
-	seqSet.AddNum(uint32(uid))
+	seqSet.AddNum(uid)
 
 	// 获取邮件 body
 	section := &imap.BodySectionName{}
@@ -366,50 +369,19 @@ func (i *Imap) GetMessage(param GetMessageType, reply *MailItem) error {
 		log.Println("Server didn't returned message")
 		return nil
 	}
-
+	t3 := time.Now()
+	fmt.Println("读取邮件用了：", t3.Sub(t2))
+	fmt.Println("一共用了：", t3.Sub(t1))
 	r := msg.GetBody(section)
-
 	if r == nil {
 		log.Println("Server didn't returned message body")
 		return nil
 	}
+
 	mailitem := new(MailItem)
 	mailitem.Attachments = 0
 
 	mr, _ := mail.CreateReader(r)
-	header := mr.Header
-
-	date, _ := header.Date()
-	mailitem.Date = date
-
-	dec := GetDecoder()
-
-	if from, err := header.AddressList("From"); err == nil {
-		for _, address := range from {
-			mailAddr := new(mail.Address)
-			mailAddr.Address = address.Address
-			name, _ := dec.Decode(address.Name)
-			mailAddr.Name = name
-			mailitem.From = append(mailitem.From, mailAddr)
-		}
-	}
-
-	if to, err := header.AddressList("To"); err == nil {
-		for _, address := range to {
-			mailAddr := new(mail.Address)
-			mailAddr.Address = address.Address
-			name, _ := dec.Decode(address.Name)
-			mailAddr.Name = name
-			mailitem.To = append(mailitem.To, mailAddr)
-		}
-	}
-
-	subject, _ := header.Subject()
-	s, err := dec.Decode(subject)
-	if err != nil {
-		s, _ = dec.DecodeHeader(subject)
-	}
-	mailitem.Subject = s
 
 	var bodyMap = make(map[string]string)
 	bodyMap["text/plain"] = ""
@@ -422,38 +394,32 @@ func (i *Imap) GetMessage(param GetMessageType, reply *MailItem) error {
 		} else if err != nil {
 			log.Println(err) //TODO 写日志
 		}
-		disp := p.Header.Get("Content-Disposition")
 		switch h := p.Header.(type) {
 		case *mail.InlineHeader:
 			b, _ := ioutil.ReadAll(p.Body)
-			//判断是 inline 附件还是邮件正文
-			if disp != "" {
-				// 内联附件 主要是内容中的图片 //TODO 替换内容中的图片
+			//正文
+			ct := p.Header.Get("Content-Type")
+			if strings.Contains(ct, "text/plain") {
+				b, _ = parseText(b) // 只获取最新回复的内容，以前的邮件对话之类的冗余内容就不要了。
+				bodyMap["text/plain"] += Encoding(string(b), ct)
+			} else if strings.Contains(ct, "text/html") {
+				bodyMap["text/html"] += string(b)
+				// ioutil.WriteFile(mailpath+"/"+fmt.Sprint(uid)+".html", b, 0777)
+			} else {
+				// 内联附件 主要是内容中的图片
 				contentID := h.Get("Content-ID")
+				fmt.Println(contentID)
 				_, pr, _ := h.ContentType()
-				// os.MkdirAll(mailpath+"/"+param["uid"], os.ModePerm) // 创建文件夹
-				// if err != nil {
-				// 	fmt.Println(err)
-				// }
-				// err = ioutil.WriteFile(pr["name"], b, 0777)
 				// 获取图片 cid
-				reg := regexp.MustCompile(`[a-zA-Z0-9]{2,}`)
+				reg := regexp.MustCompile(`[^<^>]+`)
 				contentID = reg.FindString(contentID)
 				// 获取图片后缀
 				s := strings.Split(pr["name"], ".")
 				ext := s[len(s)-1]
 				base64image := "data:image/" + ext + ";base64," + base64.StdEncoding.EncodeToString(b)
 				imagesmap[contentID] = base64image
-			} else {
-				//正文
-				ct := p.Header.Get("Content-Type")
-				if strings.Contains(ct, "text/plain") {
-					b, _ = parseText(b) // 只获取最新回复的内容，以前的邮件对话之类的冗余内容就不要了。
-					bodyMap["text/plain"] += Encoding(string(b), ct)
-				} else if strings.Contains(ct, "text/html") {
-					bodyMap["text/html"] += Encoding(string(b), ct)
-				}
 			}
+
 		case *mail.AttachmentHeader:
 			// 附件处理
 			filename, _ := h.Filename()
@@ -473,7 +439,9 @@ func (i *Imap) GetMessage(param GetMessageType, reply *MailItem) error {
 		doc.Find("img").Each(func(i int, s *goquery.Selection) {
 			//解析<img>标签
 			v, _ := s.Attr("src")
+			fmt.Println(v)
 			cid := strings.Split(v, ":")
+			fmt.Println(cid)
 			if cid[0] == "cid" {
 				s.SetAttr("src", imagesmap[cid[len(cid)-1]]) //修改标签的内容
 			}
@@ -483,12 +451,30 @@ func (i *Imap) GetMessage(param GetMessageType, reply *MailItem) error {
 		mailitem.HTMLBody = html
 	}
 
+	// recent := false
+	// //标记该邮件为已读
+	// for i := range msg.Flags {
+	// 	if strings.Contains(msg.Flags[i], "Recent") { //未读的邮件才设置状态
+	// 		recent = true
+	// 		break
+	// 	}
+	// 	log.Println(msg.Flags[i])
+	// }
+	// if recent {
+	// 	item := imap.FormatFlagsOp(imap.AddFlags, true)
+	// 	flags := []interface{}{imap.SeenFlag}
+	// 	go func() {
+	// 		c.UidStore(seqSet, item, flags, nil)
+	// 	}()
+	// }
+
 	// TEXT 内容返回给 PHP
 	if bodyMap["text/plain"] == "" {
 		bodyMap["text/plain"] = bodyMap["text/html"]
 	}
 	mailitem.Body = bodyMap["text/plain"]
 	*reply = *mailitem
+
 	return nil
 }
 
